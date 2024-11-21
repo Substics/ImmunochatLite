@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Immuno Chat</title>
+    <link rel="shortcut icon" type="image/x-icon" href="/Logo.ico" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
+    <style>
+      #user-count {
+        font-family: Helvetica;
+        font-size: 20px;
+      }
+      #sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 200px;
+        height: 100%;
+        background: #f4f4f4;
+        padding: 10px;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+        overflow-y: auto;
+      }
+      #chat-container {
+        margin-left: 220px;
+      }
+      .user-list-item {
+        cursor: pointer;
+      }
+      #color-display {
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        margin-left: 10px;
+        border: 1px solid #000;
+      }
+      #boot-user-btn {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h3>Connected Users</h3>
+      <ul id="user-list"></ul>
+      <div id="color-wheel-container" style="margin-top: 20px">
+        <input type="color" id="color-wheel" />
+        <div id="color-display"></div>
+      </div>
+      <button
+        type="button"
+        id="boot-user-btn"
+        onclick="bootUser()"
+        style="
+          margin-top: 20px;
+          width: 100%;
+          font-size: 16px;
+        ">
+        Boot User
+      </button>
+    </div>
+    <div id="chat-container">
+      <center>
+        <h1 style="font-family: 'Lato', sans-serif; user-select: none;">Immuno Chat</h1>
+        <p style="font-family: Helvetica">
+          Your Username is: <span id="username-display"></span>
+        </p>
+        <p id="chatting-with" style="font-family: Helvetica"></p>
+        <hr style="border: 1% solid black" />
+      </center>
+      <button
+        type="button"
+        onclick="returnToMainChat()"
+        style="
+          width: 10%;
+          font-size: 20px;
+          z-index: 1;
+          margin-left: auto;
+          margin-right: auto;
+          display: block;
+          margin-top: 10px;
+        ">Main Chat</button>
+      <button
+        type="button"
+        id="reconnect-btn"
+        onclick="reconnect()"
+        style="
+          display: none;
+          width: 10%;
+          font-size: 20px;
+          z-index: 1;
+          margin-left: auto;
+          margin-right: auto;
+          display: block;
+          margin-top: 10px;
+        ">
+        Reconnect
+      </button>
+      <br/>
+      <input
+        type="text"
+        id="textbox"
+        autocomplete="off"
+        style="width: 60%; font-size: 20px; margin-left: auto; margin-right: auto;"
+        onkeydown="if (event.key === 'Enter') enter()"
+      />
+      <div id="chat" style="margin-top: 20px"></div>
+    </div>
+    <script>
+      let username;
+      do {
+        username = prompt("Enter Username:");
+        if (username) {
+          username = username.trim();
+        }
+      } while (!username || username.length < 2 || username.length > 20 || username.includes("¬"));
+      document.getElementById("username-display").innerText = username;
+
+      // Show the Boot User button only if the username is "Server"
+      if (username === "Server") {
+        document.getElementById("boot-user-btn").style.display = "block";
+      }
+
+      let userCol = "#000000";
+      document.addEventListener("DOMContentLoaded", () => {
+        const colorWheel = document.getElementById("color-wheel");
+        const colorDisplay = document.getElementById("color-display");
+
+        colorWheel.addEventListener("input", (e) => {
+          userCol = e.target.value;
+          colorDisplay.style.backgroundColor = userCol;
+        });
+      });
+
+      let socket = null;
+
+      function connectSocket() {
+        socket = io({ query: `username=${username}` });
+
+        socket.on("connect", function () {
+          document.getElementById("reconnect-btn").style.display = "none";
+        });
+
+        socket.on("disconnect", function () {
+          alert("You have been disconnected. Please check your connection.");
+          document.getElementById("reconnect-btn").style.display = "block";
+        });
+
+        socket.on("username_taken", function () {
+          alert("Username is already taken. Please refresh and try again.");
+          location.reload();
+        });
+
+        socket.on("message", function (msg) {
+          const split = msg.split("¬");
+          const chat = document.getElementById("chat");
+          chat.innerHTML =
+            `<div class='chatmessage' style='font-size:23px; color:${split[1]}'> ${split[0]} </div>` +
+            chat.innerHTML;
+        });
+
+        socket.on("update_user_list", function (users) {
+          const userList = document.getElementById("user-list");
+          userList.innerHTML = "";
+          users.forEach((user) => {
+            const userItem = document.createElement("li");
+            userItem.innerText = user;
+            userItem.className = "user-list-item";
+            userItem.onclick = () => selectUser(user);
+            userList.appendChild(userItem);
+          });
+        });
+
+        socket.on("private_message", function (msg) {
+          const chat = document.getElementById("chat");
+          chat.innerHTML =
+            `<div class='chatmessage' style='font-size:23px; color:green'> [Private] ${msg} </div>` +
+            chat.innerHTML;
+        });
+      }
+
+      connectSocket();
+
+      function reconnect() {
+        if (!username) {
+          alert("Unable to reconnect. Username is missing.");
+          return;
+        }
+
+        if (socket && socket.connected) {
+          alert("You are already connected.");
+          return;
+        }
+
+        connectSocket();
+      }
+
+      function bootUser() {
+        const targetUsername = prompt("Enter the username of the user to boot:");
+        if (!targetUsername || targetUsername.trim() === "") {
+          alert("Invalid username. Please try again.");
+          return;
+        }
+
+        socket.emit("boot_user", { target_username: targetUsername }, (response) => {
+          if (response.success) {
+            alert(`User '${targetUsername}' has been booted successfully.`);
+          } else {
+            alert(`Failed to boot user '${targetUsername}': ${response.error}`);
+          }
+        });
+      }
+
+      let selectedUser = null;
+
+      function enter() {
+        const textBox = document.getElementById("textbox");
+        const message = textBox.value;
+        if (message.trim() !== "") {
+          textBox.value = "";
+
+          const time = new Date().toLocaleTimeString().split(":");
+          if (selectedUser) {
+            sendPrivateMessage(message);
+          } else {
+            socket.send(
+              `<b>[${username}]: </b> ${message} <span style='color:grey;'> [${time[0]}:${time[1]}]</span>¬${userCol}`,
+            );
+          }
+        }
+      }
+
+      function selectUser(user) {
+        selectedUser = user;
+        document.getElementById("chatting-with").innerText = `Chatting with: ${user}`;
+      }
+
+      function sendPrivateMessage(message) {
+        if (selectedUser && message.trim() !== "") {
+          const time = new Date().toLocaleTimeString().split(":");
+          socket.emit("private_message", {
+            recipient: selectedUser,
+            msg: `<b>[${username}]: </b> ${message} <span style='color:grey;'> [${time[0]}:${time[1]}]</span>`,
+          });
+        }
+      }
+
+      function returnToMainChat() {
+        selectedUser = null;
+        document.getElementById("chatting-with").innerText = "";
+      }
+    </script>
+  </body>
+</html>
